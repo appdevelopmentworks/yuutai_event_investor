@@ -1,0 +1,57 @@
+{
+  "96ut": {
+    "enabled": true,
+    "version": "2024-11",
+    "base_url": "https://96ut.com/yuutai/",
+    "timeout": 30,
+    "retry_count": 3,
+    "retry_delay": 2,
+    "selectors": {
+      "stock_code": "td.code",
+      "stock_name": "td.name",
+      "rights_month": "td.month",
+      "yuutai_genre": "td.genre",
+      "yuutai_content": "td.content",
+      "min_shares": "td.shares"
+    },
+    "fallback_selectors": {
+      "stock_code": ["div.stock-code", "span.code", "td[class*='code']"],
+      "stock_name": ["div.stock-name", "span.name", "td[class*='name']"],
+      "rights_month": ["div.month", "span.month", "td[class*='month']"]
+    }
+  },
+  "net-ir": {
+    "enabled": true,
+    "version": "2024-11",
+    "base_url": "https://yutai.net-ir.ne.jp/",
+    "timeout": 30,
+    "retry_count": 3,
+    "retry_delay": 2,
+    "selectors": {
+      "stock_code": "td.meigara_cd",
+      "stock_name": "td.meigara_name",
+      "rights_month": "td.month",
+      "yuutai_genre": "td.genre",
+      "yuutai_content": "td.content",
+      "min_shares": "td.unit"
+    },
+    "fallback_selectors": {
+      "stock_code": ["div.code", "span.cd", "td[class*='cd']"],
+      "stock_name": ["div.name", "span.meigara", "td[class*='name']"],
+      "rights_month": ["div.month", "span.month", "td[class*='month']"]
+    }
+  },
+  "common": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "headers": {
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+      "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Connection": "keep-alive"
+    },
+    "rate_limit": {
+      "enabled": true,
+      "delay_between_requests": 1.0
+    }
+  }
+}

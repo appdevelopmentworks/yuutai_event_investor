@@ -1,0 +1,42 @@
+{
+  "version": "1.0.0",
+  "app": {
+    "language": "ja",
+    "theme": "auto",
+    "window": {
+      "width": 1280,
+      "height": 800,
+      "remember_position": true,
+      "last_x": null,
+      "last_y": null
+    }
+  },
+  "data": {
+    "retention_years": 5,
+    "auto_update": false,
+    "cache_enabled": true
+  },
+  "simulation": {
+    "default_kenrlast": 2,
+    "max_days_before": 120,
+    "min_win_rate": 0.0,
+    "min_expected_return": 0.0
+  },
+  "filters": {
+    "rights_months": [],
+    "min_win_rate": 0.0,
+    "min_expected_return": 0.0,
+    "max_investment_amount": null,
+    "genres": []
+  },
+  "notifications": {
+    "enabled": true,
+    "advance_notice_days": 3,
+    "show_on_startup": true
+  },
+  "export": {
+    "default_path": "./exports",
+    "csv_encoding": "utf-8-sig",
+    "screenshot_format": "png"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "96ut": {
+    "description": "96ut.com のセレクター設定",
+    "stock_rows": [
+      "table.yuutai-list tr",
+      "div.stock-item",
+      "tr.stock-row"
+    ],
+    "code": [
+      "td.code a",
+      "span.code",
+      "div.code"
+    ],
+    "name": [
+      "td.name a",
+      "span.name",
+      "div.name"
+    ],
+    "rights_month": [
+      "td.rights-month",
+      "span.month",
+      "div.month"
+    ],
+    "yuutai_genre": [
+      "td.genre",
+      "span.genre",
+      "div.genre"
+    ],
+    "yuutai_content": [
+      "td.content",
+      "span.content",
+      "div.content"
+    ],
+    "min_investment": [
+      "td.investment",
+      "span.investment",
+      "div.investment"
+    ]
+  },
+  "yutai_net": {
+    "description": "yutai.net-ir.ne.jp のセレクター設定",
+    "stock_rows": [
+      "table.yuutai-table tr.data-row",
+      "div.stock-list div.stock",
+      "tr.stock-item"
+    ],
+    "code": [
+      "td:nth-child(1) a",
+      "span.stock-code",
+      "div.code"
+    ],
+    "name": [
+      "td:nth-child(2) a",
+      "span.stock-name",
+      "div.name"
+    ],
+    "rights_date": [
+      "td:nth-child(3)",
+      "span.rights-date",
+      "div.date"
+    ],
+    "yuutai_content": [
+      "td:nth-child(4)",
+      "span.yuutai-desc",
+      "div.content"
+    ],
+    "min_investment": [
+      "td:nth-child(5)",
+      "span.investment",
+      "div.investment"
+    ]
+  },
+  "fallback": {
+    "description": "フォールバック用の汎用セレクター",
+    "stock_rows": [
+      "table tr",
+      "div.item",
+      "li.stock"
+    ],
+    "code": [
+      "td:nth-child(1)",
+      "div:nth-child(1)",
+      "span:first-child"
+    ],
+    "name": [
+      "td:nth-child(2)",
+      "div:nth-child(2)",
+      "span:nth-child(2)"
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+# Core Dependencies
+PySide6>=6.6.0
+PySide6-Addons>=6.6.0
+PySide6-Essentials>=6.6.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Financial Data
+yfinance>=0.2.32
+
+# Web Scraping
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+lxml>=4.9.0
+
+# Data Visualization
+matplotlib>=3.8.0
+
+# Configuration & Logging
+python-dotenv>=1.0.0
+colorlog>=6.7.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-qt>=4.2.0
+
+# Build & Distribution
+pyinstaller>=6.0.0
+
+# Optional Dependencies (install if needed)
+# reportlab>=4.0.0  # PDF generation (not currently used)
+# winotify>=1.1.0  # Windows desktop notifications (not currently used)
+# notify2>=0.3.1  # Linux notifications (not currently used)
+# pync>=2.0.3  # macOS notifications (not currently used)
+
+# Development Tools (optional)
+# ipython>=8.15.0
+# jupyter>=1.0.0
+# black>=23.0.0
+# flake8>=6.1.0
+# mypy>=1.5.0
