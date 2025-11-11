@@ -1,76 +1,94 @@
 @echo off
-REM Yuutai Event Investor Build Script
-REM ã“ã®ã‚¹ã‚¯ãƒªãƒ—ãƒˆã¯ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³ã‚’ãƒ“ãƒ«ãƒ‰ã—ã¾ã™
+REM Windows—pƒrƒ‹ƒhƒXƒNƒŠƒvƒg
+REM g—p•û–@: build.bat [pyinstaller|nuitka] ‚Ü‚½‚Íˆø”‚È‚µ‚Å‘Î˜b®ƒƒjƒ…[
 
-echo ========================================
-echo Yuutai Event Investor Build Script
-echo ========================================
-echo.
+setlocal
 
-echo [1/5] Cleaning old builds...
-if exist dist rmdir /s /q dist
-if exist build rmdir /s /q build
-echo OK
+REM ˆø”‚ª‚ ‚éê‡‚Í’¼ÚÀs
+if not "%1"=="" goto direct_build
 
-echo.
-echo [2/5] Checking dependencies...
-python --version
-if %errorlevel% neq 0 (
-    echo ERROR: Python not found
-    pause
-    exit /b 1
-)
-
-pip show pyinstaller >nul 2>&1
-if %errorlevel% neq 0 (
-    echo PyInstaller not found. Installing...
-    pip install pyinstaller
-)
-echo OK
-
-echo.
-echo [3/5] Installing project dependencies...
-pip install -r requirements.txt
-if %errorlevel% neq 0 (
-    echo ERROR: Failed to install dependencies
-    pause
-    exit /b 1
-)
-echo OK
-
-echo.
-echo [4/5] Building application with PyInstaller...
-pyinstaller YuutaiEventInvestor.spec
-if %errorlevel% neq 0 (
-    echo ERROR: Build failed
-    pause
-    exit /b 1
-)
-echo OK
-
-echo.
-echo [5/5] Creating distribution package...
-cd dist
-if exist YuutaiEventInvestor_v1.0.0_Windows.zip del YuutaiEventInvestor_v1.0.0_Windows.zip
-powershell -Command "Compress-Archive -Path YuutaiEventInvestor -DestinationPath YuutaiEventInvestor_v1.0.0_Windows.zip"
-if %errorlevel% neq 0 (
-    echo WARNING: Failed to create ZIP (using tar instead)
-    tar -a -c -f YuutaiEventInvestor_v1.0.0_Windows.zip YuutaiEventInvestor
-)
-cd ..
-echo OK
-
+REM ˆø”‚ª‚È‚¢ê‡‚Í‘Î˜b®ƒƒjƒ…[
+:menu
 echo.
 echo ========================================
-echo Build completed successfully!
+echo Yuutai Event Investor ƒrƒ‹ƒhƒXƒNƒŠƒvƒg
 echo ========================================
 echo.
-echo Output files:
-echo   - Executable: dist\YuutaiEventInvestor\YuutaiEventInvestor.exe
-echo   - ZIP package: dist\YuutaiEventInvestor_v1.0.0_Windows.zip
+echo ƒrƒ‹ƒh•û–@‚ğ‘I‘ğ‚µ‚Ä‚­‚¾‚³‚¢:
 echo.
-echo Next steps:
-echo   1. Test the executable: cd dist\YuutaiEventInvestor ^&^& YuutaiEventInvestor.exe
-echo   2. Distribute: dist\YuutaiEventInvestor_v1.0.0_Windows.zip
+echo   1. PyInstaller  i„§E‚‘¬ƒrƒ‹ƒhj
+echo   2. Nuitka       i‚‘¬Àsj
+echo   3. ƒLƒƒƒ“ƒZƒ‹
 echo.
+echo ========================================
+echo.
+
+set /p choice="”Ô†‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢ (1-3): "
+
+if "%choice%"=="1" goto pyinstaller
+if "%choice%"=="2" goto nuitka
+if "%choice%"=="3" goto cancel
+
+echo.
+echo ƒGƒ‰[: –³Œø‚È‘I‘ğ‚Å‚·
+echo.
+pause
+exit /b 1
+
+REM ƒRƒ}ƒ“ƒhƒ‰ƒCƒ“ˆø”‚É‚æ‚é’¼ÚÀs
+:direct_build
+if /i "%1"=="pyinstaller" goto pyinstaller
+if /i "%1"=="nuitka" goto nuitka
+
+echo.
+echo ƒGƒ‰[: •s–¾‚Èƒrƒ‹ƒh•û–@ '%1'
+echo.
+echo —LŒø‚ÈƒIƒvƒVƒ‡ƒ“: pyinstaller, nuitka
+echo.
+pause
+exit /b 1
+
+:pyinstaller
+echo.
+echo ----------------------------------------
+echo PyInstaller‚Åƒrƒ‹ƒh‚µ‚Ü‚·...
+echo ----------------------------------------
+echo.
+python build_pyinstaller.py
+goto end
+
+:nuitka
+echo.
+echo ----------------------------------------
+echo Nuitka‚Åƒrƒ‹ƒh‚µ‚Ü‚·...
+echo ----------------------------------------
+echo.
+python build_nuitka.py
+goto end
+
+:cancel
+echo.
+echo ƒLƒƒƒ“ƒZƒ‹‚µ‚Ü‚µ‚½B
+echo.
+pause
+exit /b 0
+
+:end
+if %errorlevel% equ 0 (
+    echo.
+    echo ========================================
+    echo [OK] ƒrƒ‹ƒhŠ®—¹\!
+    echo ========================================
+    echo.
+    echo o—Íæ: dist\YuutaiEventInvestor
+    echo.
+) else (
+    echo.
+    echo ========================================
+    echo [ERROR] ƒrƒ‹ƒh¸”s
+    echo ========================================
+    echo.
+)
+
+endlocal
 pause

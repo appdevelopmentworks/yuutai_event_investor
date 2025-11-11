@@ -358,12 +358,13 @@ class DatabaseManager:
             self.logger.error(f"シミュレーションキャッシュ取得エラー: {e}")
             return []
 
-    def get_best_simulation_result(self, code: str) -> Optional[Dict[str, Any]]:
+    def get_best_simulation_result(self, code: str, rights_month: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         最適なシミュレーション結果を取得（期待リターン×勝率が最高のもの）
 
         Args:
             code: 証券コード
+            rights_month: 権利確定月（指定しない場合は全ての月から最適なものを取得）
 
         Returns:
             Dict: 最適なシミュレーション結果、存在しない場合はNone
@@ -372,12 +373,20 @@ class DatabaseManager:
             conn = self.connect()
             cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT * FROM simulation_cache
-                WHERE code = ?
-                ORDER BY (expected_return * win_rate) DESC
-                LIMIT 1
-            """, (code,))
+            if rights_month is not None:
+                cursor.execute("""
+                    SELECT * FROM simulation_cache
+                    WHERE code = ? AND rights_month = ?
+                    ORDER BY (expected_return * win_rate) DESC
+                    LIMIT 1
+                """, (code, rights_month))
+            else:
+                cursor.execute("""
+                    SELECT * FROM simulation_cache
+                    WHERE code = ?
+                    ORDER BY (expected_return * win_rate) DESC
+                    LIMIT 1
+                """, (code,))
 
             row = cursor.fetchone()
             conn.close()

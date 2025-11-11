@@ -15,6 +15,8 @@ from PySide6.QtGui import QFont, QColor
 import logging
 from typing import Dict, Optional
 from .chart_widget import ChartWidget
+from .trade_history_widget import TradeHistoryWidget
+from .risk_metrics_widget import RiskMetricsWidget
 
 
 class StockInfoCard(QWidget):
@@ -349,7 +351,7 @@ class DetailPanel(QWidget):
         # ========================================
         title = QLabel("📈 詳細分析")
         title.setFont(QFont("Meiryo", 14, QFont.Bold))
-        title.setStyleSheet("color: #E0E0E0;")
+        title.setStyleSheet("color: #1E90FF;")
         content_layout.addWidget(title)
 
         # ========================================
@@ -371,6 +373,20 @@ class DetailPanel(QWidget):
         self.stats_table = DetailStatsTable()
         content_layout.addWidget(self.stats_table)
 
+        # ========================================
+        # トレード履歴ウィジェット
+        # ========================================
+        self.trade_history_widget = TradeHistoryWidget()
+        self.trade_history_widget.setMinimumHeight(400)
+        content_layout.addWidget(self.trade_history_widget)
+
+        # ========================================
+        # リスク指標ウィジェット
+        # ========================================
+        self.risk_metrics_widget = RiskMetricsWidget()
+        self.risk_metrics_widget.setMinimumHeight(400)
+        content_layout.addWidget(self.risk_metrics_widget)
+
         content_layout.addStretch()
 
         scroll_area.setWidget(content_widget)
@@ -380,13 +396,14 @@ class DetailPanel(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(scroll_area)
 
-    def update_stock_detail(self, stock_data: Dict, result_data: Optional[Dict] = None):
+    def update_stock_detail(self, stock_data: Dict, result_data: Optional[Dict] = None, emit_completed: bool = False):
         """
         銘柄詳細を更新
 
         Args:
             stock_data: 銘柄データ
             result_data: バックテスト結果データ
+            emit_completed: バックテスト完了シグナルを発火するか（新しいバックテスト完了時のみTrue）
         """
         self.current_stock = stock_data
         self.current_result = result_data
@@ -401,14 +418,32 @@ class DetailPanel(QWidget):
             self.chart_widget.plot_data(result_data)
             self.stats_table.update_stats(result_data)
 
+            # トレード履歴ウィジェットを更新
+            if 'win_trades' in result_data and 'lose_trades' in result_data:
+                self.trade_history_widget.load_trade_data(result_data)
+
+                # リスク指標ウィジェットを更新
+                self.risk_metrics_widget.load_risk_metrics(
+                    result_data['win_trades'],
+                    result_data['lose_trades']
+                )
+            else:
+                self.logger.warning("トレード履歴データが結果に含まれていません")
+                self.trade_history_widget.clear()
+                self.risk_metrics_widget.clear()
+
             # バックテスト完了シグナルを発信（グリッド更新のため）
-            code = stock_data.get('code')
-            rights_month = stock_data.get('rights_month')
-            if code and rights_month:
-                self.backtest_completed.emit(code, rights_month)
+            # emit_completedがTrueの場合のみ（新しいバックテスト完了時）
+            if emit_completed:
+                code = stock_data.get('code')
+                rights_month = stock_data.get('rights_month')
+                if code and rights_month:
+                    self.backtest_completed.emit(code, rights_month)
         else:
             self.chart_widget.clear()
             self.stats_table.clear()
+            self.trade_history_widget.clear()
+            self.risk_metrics_widget.clear()
 
     def clear(self):
         """パネルをクリア"""
@@ -417,3 +452,5 @@ class DetailPanel(QWidget):
         self.info_card.clear()
         self.chart_widget.clear()
         self.stats_table.clear()
+        self.trade_history_widget.clear()
+        self.risk_metrics_widget.clear()

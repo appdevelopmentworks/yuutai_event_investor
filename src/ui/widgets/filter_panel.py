@@ -75,7 +75,7 @@ class FilterPanel(QWidget):
         self.win_rate_slider = QSlider(Qt.Horizontal)
         self.win_rate_slider.setMinimum(0)
         self.win_rate_slider.setMaximum(100)
-        self.win_rate_slider.setValue(50)
+        self.win_rate_slider.setValue(0)
         self.win_rate_slider.setTickPosition(QSlider.TicksBelow)
         self.win_rate_slider.setTickInterval(10)
         self.win_rate_slider.setStyleSheet(self._get_slider_style())
@@ -83,7 +83,7 @@ class FilterPanel(QWidget):
         self.win_rate_slider.valueChanged.connect(self._on_filter_changed)
         win_rate_layout.addWidget(self.win_rate_slider)
 
-        self.win_rate_value_label = QLabel("50%")
+        self.win_rate_value_label = QLabel("0%")
         self.win_rate_value_label.setFont(QFont("Meiryo", 11, QFont.Bold))
         self.win_rate_value_label.setStyleSheet("color: #1E90FF;")
         self.win_rate_value_label.setFixedWidth(50)
@@ -365,7 +365,7 @@ class FilterPanel(QWidget):
 
         # 各フィルターをデフォルト値に戻す
         self.month_filter.setCurrentIndex(0)
-        self.win_rate_slider.setValue(50)
+        self.win_rate_slider.setValue(0)
         self.return_slider.setValue(0)
         self.amount_spinbox.setValue(1000)
         self.sort_combo.setCurrentIndex(0)

@@ -17,11 +17,12 @@ from PySide6.QtGui import QFont, QAction
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+import pandas as pd
 
 from ..core.database import DatabaseManager
 from ..core.calculator import OptimalTimingCalculator
 from ..core.data_fetcher import StockDataFetcher
-from .widgets import StockListWidget, DetailPanel, FilterPanel
+from .widgets import StockListWidget, DetailPanel, FilterPanel, ComparisonPanel, PortfolioPanel
 from .widgets.watchlist_widget import WatchlistWidget
 from .dialogs import SettingsDialog
 from .import_dialog import ImportDialog
@@ -62,6 +63,47 @@ class AnalysisWorker(QThread):
             self.error.emit(f"分析エラー: {str(e)}")
 
 
+class TradeDetailsWorker(QThread):
+    """バックグラウンドでトレード詳細を取得するワーカー"""
+
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(self, ticker: str, rights_month: int, buy_days_before: int):
+        super().__init__()
+        self.ticker = ticker
+        self.rights_month = rights_month
+        self.buy_days_before = buy_days_before
+        self.logger = logging.getLogger(__name__)
+
+    def run(self):
+        """トレード詳細取得"""
+        try:
+            self.logger.info(f"トレード詳細取得開始: {self.ticker}, 月={self.rights_month}, 日数={self.buy_days_before}")
+
+            fetcher = StockDataFetcher()
+            calculator = OptimalTimingCalculator(fetcher)
+
+            trade_details = calculator.get_trade_details(
+                self.ticker,
+                self.rights_month,
+                self.buy_days_before
+            )
+
+            if trade_details:
+                win_count = len(trade_details.get('win_trades', pd.DataFrame()))
+                lose_count = len(trade_details.get('lose_trades', pd.DataFrame()))
+                self.logger.info(f"トレード詳細取得完了: {self.ticker}, 勝ち={win_count}, 負け={lose_count}")
+                self.finished.emit(trade_details)
+            else:
+                self.logger.warning(f"トレード詳細がNone: {self.ticker}")
+                self.error.emit("トレード詳細が取得できませんでした")
+
+        except Exception as e:
+            self.logger.error(f"トレード詳細取得エラー: {e}", exc_info=True)
+            self.error.emit(f"トレード詳細取得エラー: {str(e)}")
+
+
 class MainWindow(QMainWindow):
     """メインウィンドウクラス（Phase 4統合版）"""
 
@@ -83,6 +125,7 @@ class MainWindow(QMainWindow):
         self.all_stocks = []
         self.filtered_stocks = []
         self.current_analysis_worker = None
+        self.current_trade_details_worker = None
         self.current_selected_stock = None
         self.current_result = None
 
@@ -156,6 +199,15 @@ class MainWindow(QMainWindow):
         self.watchlist_widget = WatchlistWidget(self.db)
         self.watchlist_widget.stock_selected.connect(self.on_stock_selected)
         self.tab_widget.addTab(self.watchlist_widget, "⭐ ウォッチリスト")
+
+        # 比較パネルタブ
+        self.comparison_panel = ComparisonPanel()
+        self.comparison_panel.send_to_portfolio.connect(self.on_send_to_portfolio)
+        self.tab_widget.addTab(self.comparison_panel, "📈 銘柄比較")
+
+        # ポートフォリオパネルタブ
+        self.portfolio_panel = PortfolioPanel()
+        self.tab_widget.addTab(self.portfolio_panel, "💼 ポートフォリオ")
 
         main_layout.addWidget(self.tab_widget)
 
@@ -233,9 +285,10 @@ class MainWindow(QMainWindow):
         self.stock_list_widget = StockListWidget()
         self.stock_list_widget.setMinimumWidth(350)
         self.stock_list_widget.stock_selected.connect(self.on_stock_selected)
-        # コンテキストメニュー追加
-        self.stock_list_widget.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.stock_list_widget.table.customContextMenuRequested.connect(self.show_stock_context_menu)
+        # 右クリックメニューシグナル接続
+        self.stock_list_widget.add_to_watchlist_requested.connect(self.add_to_watchlist_from_signal)
+        self.stock_list_widget.add_to_comparison_requested.connect(self.add_to_comparison_from_signal)
+        self.stock_list_widget.add_to_portfolio_requested.connect(self.add_to_portfolio_from_signal)
         splitter.addWidget(self.stock_list_widget)
 
         # 右パネル（詳細表示）
@@ -380,14 +433,15 @@ class MainWindow(QMainWindow):
             self.all_stocks = []
             for stock in stocks:
                 code = stock.get('code', '')
+                rights_month = stock.get('rights_month', 0)
 
-                # シミュレーションキャッシュから最適な結果を取得
-                best_result = self.db.get_best_simulation_result(code)
+                # シミュレーションキャッシュから最適な結果を取得（権利確定月を指定）
+                best_result = self.db.get_best_simulation_result(code, rights_month)
 
                 stock_data = {
                     'code': code,
                     'name': stock.get('name', ''),
-                    'rights_month': stock.get('rights_month', 0),
+                    'rights_month': rights_month,
                     'rights_date': stock.get('rights_date', ''),
                     'yuutai_genre': stock.get('yuutai_genre', ''),
                     'yuutai_content': stock.get('yuutai_content', ''),
@@ -493,8 +547,13 @@ class MainWindow(QMainWindow):
                     'all_results': converted_results  # 変換後のデータを使用
                 }
 
+                # トレード詳細を取得（バックグラウンドで）
+                self.logger.info(f"トレード詳細取得を開始: {code}, 月={rights_month}, 日数={best_result['buy_days_before']}")
+                self.fetch_trade_details(code, rights_month, best_result['buy_days_before'], result_data, stock_data)
+
                 self.current_result = result_data
-                self.detail_panel.update_stock_detail(stock_data, result_data)
+                # キャッシュから表示する場合はグリッド更新不要（emit_completed=False）
+                self.detail_panel.update_stock_detail(stock_data, result_data, emit_completed=False)
                 self.status_bar.showMessage(f"{name}({code})の分析結果を表示しました（キャッシュ）")
 
             else:
@@ -503,7 +562,7 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"{name}({code})を分析中...")
 
                 # 銘柄情報のみ表示
-                self.detail_panel.update_stock_detail(stock_data, None)
+                self.detail_panel.update_stock_detail(stock_data, None, emit_completed=False)
 
                 # バックテストをバックグラウンドで実行
                 self.run_analysis(code, rights_date, stock_data)
@@ -551,7 +610,8 @@ class MainWindow(QMainWindow):
                 self.logger.info(f"分析結果をデータベースに保存: {code} ({len(result_data['all_results'])}件)")
 
             self.current_result = result_data
-            self.detail_panel.update_stock_detail(stock_data, result_data)
+            # 新しいバックテスト完了時はグリッド更新が必要（emit_completed=True）
+            self.detail_panel.update_stock_detail(stock_data, result_data, emit_completed=True)
             self.status_bar.showMessage(f"{stock_data.get('name')}の分析が完了しました")
 
         except Exception as e:
@@ -567,11 +627,11 @@ class MainWindow(QMainWindow):
         try:
             self.logger.info(f"バックテスト完了、グリッド更新: {code} ({rights_month}月)")
 
-            # データベースから最新の結果を取得
-            best_result = self.db.get_best_simulation_result(code)
+            # データベースから最新の結果を取得（権利確定月を指定）
+            best_result = self.db.get_best_simulation_result(code, rights_month)
 
             if not best_result:
-                self.logger.warning(f"バックテスト結果が見つかりません: {code}")
+                self.logger.warning(f"バックテスト結果が見つかりません: {code} ({rights_month}月)")
                 return
 
             # all_stocksリストを更新
@@ -582,10 +642,18 @@ class MainWindow(QMainWindow):
                     stock['expected_return'] = best_result.get('expected_return')
                     break
 
-            # 左側のグリッドを再描画
-            self.stock_list_widget.load_stocks(self.all_stocks)
+            # filtered_stocksリストも更新
+            for stock in self.filtered_stocks:
+                if stock.get('code') == code and stock.get('rights_month') == rights_month:
+                    stock['optimal_days'] = best_result.get('buy_days_before')
+                    stock['win_rate'] = best_result.get('win_rate')
+                    stock['expected_return'] = best_result.get('expected_return')
+                    break
 
-            self.logger.info(f"グリッド更新完了: {code}")
+            # 左側のグリッドを再描画（フィルタリング済みのリストを使用）
+            self.stock_list_widget.load_stocks(self.filtered_stocks)
+
+            self.logger.info(f"グリッド更新完了: {code} ({rights_month}月)")
 
         except Exception as e:
             self.logger.error(f"グリッド更新エラー: {e}", exc_info=True)
@@ -597,10 +665,27 @@ class MainWindow(QMainWindow):
             return
 
         code_item = self.stock_list_widget.table.item(row, 0)
-        if not code_item:
+        month_item = self.stock_list_widget.table.item(row, 2)
+        if not code_item or not month_item:
             return
 
         code = code_item.text()
+        # 権利月から数値を抽出
+        month_text = month_item.text()
+        try:
+            rights_month = int(month_text.replace('月', ''))
+        except ValueError:
+            return
+
+        # 該当する銘柄データを取得
+        stock_data = None
+        for stock in self.filtered_stocks:
+            if stock.get('code') == code and stock.get('rights_month') == rights_month:
+                stock_data = stock
+                break
+
+        if not stock_data:
+            return
 
         menu = QMenu(self)
 
@@ -613,6 +698,22 @@ class MainWindow(QMainWindow):
             add_action = QAction("ウォッチリストに追加", self)
             add_action.triggered.connect(lambda: self.add_to_watchlist(code))
             menu.addAction(add_action)
+
+        menu.addSeparator()
+
+        # 比較リストに追加/削除
+        if self.comparison_panel.is_stock_compared(code, rights_month):
+            remove_compare_action = QAction("比較リストから削除", self)
+            remove_compare_action.triggered.connect(
+                lambda: self.comparison_panel.remove_stock(code, rights_month)
+            )
+            menu.addAction(remove_compare_action)
+        else:
+            add_compare_action = QAction("比較リストに追加", self)
+            add_compare_action.triggered.connect(
+                lambda: self.add_to_comparison(stock_data)
+            )
+            menu.addAction(add_compare_action)
 
         menu.exec(self.stock_list_widget.table.mapToGlobal(position))
 
@@ -629,6 +730,34 @@ class MainWindow(QMainWindow):
             stock = self.db.get_stock(code)
             name = stock['name'] if stock else code
             self.status_bar.showMessage(f"{name}をウォッチリストから削除しました", 3000)
+
+    def add_to_comparison(self, stock_data: Dict[str, Any]):
+        """比較リストに追加"""
+        if self.comparison_panel.add_stock(stock_data):
+            name = stock_data.get('name', stock_data.get('code', ''))
+            rights_month = stock_data.get('rights_month', 0)
+            self.status_bar.showMessage(f"{name}({rights_month}月)を比較リストに追加しました", 3000)
+            # 比較タブに切り替え
+            self.tab_widget.setCurrentIndex(2)
+
+    def add_to_watchlist_from_signal(self, stock_data: Dict[str, Any]):
+        """シグナルからウォッチリストに追加"""
+        code = stock_data.get('code')
+        if code:
+            self.add_to_watchlist(code)
+
+    def add_to_comparison_from_signal(self, stock_data: Dict[str, Any]):
+        """シグナルから比較リストに追加"""
+        self.add_to_comparison(stock_data)
+
+    def add_to_portfolio_from_signal(self, stock_data: Dict[str, Any]):
+        """シグナルからポートフォリオに追加"""
+        if self.portfolio_panel.add_stock(stock_data):
+            name = stock_data.get('name', stock_data.get('code', ''))
+            rights_month = stock_data.get('rights_month', 0)
+            self.status_bar.showMessage(f"{name}({rights_month}月)をポートフォリオに追加しました", 3000)
+            # ポートフォリオタブに切り替え
+            self.tab_widget.setCurrentIndex(3)
 
     def show_import_dialog(self):
         """CSVインポートダイアログを表示"""
@@ -741,11 +870,90 @@ class MainWindow(QMainWindow):
         self.logger.info(f"設定が変更されました: {settings}")
         # TODO: 設定を適用
 
+    def on_send_to_portfolio(self, stocks: List[Dict]):
+        """比較パネルからポートフォリオパネルに銘柄を送信"""
+        try:
+            self.portfolio_panel.set_stocks(stocks)
+            # ポートフォリオタブに切り替え
+            self.tab_widget.setCurrentWidget(self.portfolio_panel)
+            self.logger.info(f"{len(stocks)}銘柄をポートフォリオに送信しました")
+        except Exception as e:
+            self.logger.error(f"ポートフォリオ送信エラー: {e}", exc_info=True)
+            QMessageBox.critical(
+                self, "エラー",
+                f"ポートフォリオへの送信に失敗しました: {str(e)}"
+            )
+
+    def fetch_trade_details(self, code: str, rights_month: int, buy_days_before: int,
+                           result_data: Dict, stock_data: Dict):
+        """トレード詳細をバックグラウンドで取得"""
+        try:
+            # 既存のワーカーがあれば停止
+            if self.current_trade_details_worker and self.current_trade_details_worker.isRunning():
+                self.current_trade_details_worker.quit()
+                self.current_trade_details_worker.wait()
+
+            # 新しいワーカーを作成
+            self.current_trade_details_worker = TradeDetailsWorker(code, rights_month, buy_days_before)
+            self.current_trade_details_worker.finished.connect(
+                lambda trade_details: self.on_trade_details_fetched(trade_details, result_data, stock_data)
+            )
+            self.current_trade_details_worker.error.connect(
+                lambda err: self.logger.warning(f"トレード詳細取得エラー: {err}")
+            )
+            self.current_trade_details_worker.start()
+
+        except Exception as e:
+            self.logger.error(f"トレード詳細取得開始エラー: {e}", exc_info=True)
+
+    def on_trade_details_fetched(self, trade_details: Dict, result_data: Dict, stock_data: Dict):
+        """トレード詳細取得完了時の処理"""
+        try:
+            code = stock_data.get('code')
+            rights_month = stock_data.get('rights_month')
+
+            self.logger.info(f"トレード詳細取得コールバック: {code}, 月={rights_month}")
+
+            # 現在選択されている銘柄と一致するか確認
+            if self.current_selected_stock:
+                current_code = self.current_selected_stock.get('code')
+                current_month = self.current_selected_stock.get('rights_month')
+                self.logger.info(f"現在選択中: {current_code}, 月={current_month}")
+
+                if current_code == code and current_month == rights_month:
+                    # result_dataにトレード詳細を追加
+                    win_trades = trade_details['win_trades']
+                    lose_trades = trade_details['lose_trades']
+
+                    self.logger.info(f"トレード詳細: 勝ち={len(win_trades)}, 負け={len(lose_trades)}")
+
+                    result_data['win_trades'] = win_trades
+                    result_data['lose_trades'] = lose_trades
+
+                    # current_resultも更新
+                    self.current_result = result_data
+
+                    # 詳細パネルを更新
+                    self.detail_panel.update_stock_detail(stock_data, result_data, emit_completed=False)
+
+                    self.logger.info(f"トレード詳細を追加し、パネルを更新しました: {code}")
+                else:
+                    self.logger.info(f"別の銘柄が選択されているため、トレード詳細の更新をスキップします")
+            else:
+                self.logger.warning("current_selected_stockがNoneです")
+
+        except Exception as e:
+            self.logger.error(f"トレード詳細追加エラー: {e}", exc_info=True)
+
     def closeEvent(self, event):
         """ウィンドウを閉じる時の処理"""
         if self.current_analysis_worker and self.current_analysis_worker.isRunning():
             self.current_analysis_worker.quit()
             self.current_analysis_worker.wait()
+
+        if self.current_trade_details_worker and self.current_trade_details_worker.isRunning():
+            self.current_trade_details_worker.quit()
+            self.current_trade_details_worker.wait()
 
         self.logger.info("アプリケーションを終了します")
         event.accept()

@@ -51,13 +51,16 @@ class Calculator:
         try:
             # データフレームのコピーを作成
             data = df.copy()
-            
+
+            # 列名の正規化（大文字・小文字両方に対応）
+            close_col = 'Close' if 'Close' in data.columns else 'close'
+
             # 月情報を追加
             data["Month"] = data.index.month
             data["MonthSft"] = data["Month"].shift(-1)
             data.dropna(inplace=True)
             data["MonthSft"] = data["MonthSft"].astype(int)
-            
+
             # 権利確定日のフラグを立てる
             data["権利確定日"] = data["Month"] != data["MonthSft"]
 
@@ -65,16 +68,20 @@ class Calculator:
             data["権利付最終日"] = data["権利確定日"].shift(-kenrlast)
             data.loc[data["権利付最終日"].isna(), "権利付最終日"] = False
             data["権利付最終日"] = data["権利付最終日"].astype(bool)
-            
+
             # 買入日の終値を取得
-            data["買入日終値"] = data["Close"].shift(buy_days_before)
-            
+            data["買入日終値"] = data[close_col].shift(buy_days_before)
+
+            # 買入日を計算（権利付最終日からbuy_days_before日前）
+            # インデックスが日付なので、営業日ベースで計算
+            data["買入日"] = data.index.to_series().shift(buy_days_before)
+
             # リターンを計算
-            data["リターン(%)"] = (data["Close"] - data["買入日終値"]) / data["買入日終値"] * 100
-            
+            data["リターン(%)"] = (data[close_col] - data["買入日終値"]) / data["買入日終値"] * 100
+
             # 権利付最終日で指定月のデータのみを抽出
             filtered = data[data["権利付最終日"] & (data["Month"] == rights_month)]
-            
+
             # 勝ちトレードと負けトレードに分類
             win_trades = filtered[filtered["リターン(%)"] > 0].copy()
             lose_trades = filtered[filtered["リターン(%)"] <= 0].copy()
@@ -252,6 +259,14 @@ class Calculator:
                 f"(期待値: {optimal['expected_return']}%, 勝率: {optimal['win_rate']*100:.1f}%)"
             )
 
+            # 最適な日のトレード詳細を取得
+            win_trades, lose_trades = self.calculate_returns(
+                df=df,
+                buy_days_before=optimal['days_before'],
+                kenrlast=kenrlast,
+                rights_month=rights_month
+            )
+
             return {
                 'ticker': ticker,
                 'rights_month': rights_month,
@@ -265,7 +280,9 @@ class Calculator:
                 'max_win_return': optimal['max_win_return'],
                 'avg_lose_return': optimal['avg_lose_return'],
                 'max_lose_return': optimal['max_lose_return'],
-                'all_results': all_results
+                'all_results': all_results,
+                'win_trades': win_trades,  # 勝ちトレード詳細
+                'lose_trades': lose_trades  # 負けトレード詳細
             }
 
         except Exception as e:
@@ -336,4 +353,51 @@ class OptimalTimingCalculator:
 
         except Exception as e:
             self.logger.error(f"最適タイミング計算エラー: {ticker} - {e}", exc_info=True)
+            return None
+
+    def get_trade_details(self, ticker: str, rights_month: int,
+                         buy_days_before: int, kenrlast: int = 2) -> Optional[Dict]:
+        """
+        特定の買入日数でのトレード詳細を取得
+
+        Args:
+            ticker: ティッカーコード
+            rights_month: 権利確定月
+            buy_days_before: 買入日数（権利付最終日の何日前）
+            kenrlast: 権利付最終日（1=米国株、2=日本株）
+
+        Returns:
+            Dict: win_tradesとlose_tradesを含む辞書
+        """
+        try:
+            # 設定を読み込む
+            settings = self.calculator._load_settings()
+            data_period = settings.get('data_period', '10y')
+
+            # 株価データを取得
+            if self.data_fetcher is None:
+                self.logger.error("data_fetcherが設定されていません")
+                return None
+
+            df = self.data_fetcher.fetch_stock_data(ticker, period=data_period)
+
+            if df is None or df.empty:
+                self.logger.error(f"株価データが取得できません: {ticker}")
+                return None
+
+            # トレード詳細を計算
+            win_trades, lose_trades = self.calculator.calculate_returns(
+                df=df,
+                buy_days_before=buy_days_before,
+                kenrlast=kenrlast,
+                rights_month=rights_month
+            )
+
+            return {
+                'win_trades': win_trades,
+                'lose_trades': lose_trades
+            }
+
+        except Exception as e:
+            self.logger.error(f"トレード詳細取得エラー: {ticker} - {e}", exc_info=True)
             return None

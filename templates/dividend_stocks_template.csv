@@ -1,0 +1,27 @@
+# 高配当銘柄インポート用CSVテンプレート
+# このファイルを編集して、メニュー → ファイル → 高配当銘柄をインポート から読み込んでください
+#
+# 必須項目: code, name, dividend_yield, rights_month
+# オプション項目: dividend_amount, market, sector
+#
+# 記入例:
+# code,name,dividend_yield,rights_month,dividend_amount,market,sector
+# 8306,三菱UFJフィナンシャル・グループ,4.5,3,50,プライム,銀行業
+# 9434,ソフトバンク,5.2,3,86,プライム,情報・通信業
+# 8001,伊藤忠商事,3.8,3,170,プライム,卸売業
+#
+# 注意事項:
+# - code: 4桁の証券コード（文字列）
+# - name: 銘柄名
+# - dividend_yield: 配当利回り（%）、小数点可
+# - rights_month: 権利確定月（1-12の整数）
+# - dividend_amount: 1株あたり配当金（円）、オプション
+# - market: プライム/スタンダード/グロース、オプション
+# - sector: 業種名、オプション
+#
+# 権利付最終日について:
+# - 権利付最終日は権利確定日の「kenrlast」営業日前に自動計算されます
+# - 現在の設定: kenrlast=2（日本株）、将来的に1営業日前に変更される可能性あり
+# - 設定変更は config/settings.json の "kenrlast" で可能です
+
+code,name,dividend_yield,rights_month,dividend_amount,market,sector

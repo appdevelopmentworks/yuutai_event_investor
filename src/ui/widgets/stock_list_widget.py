@@ -9,10 +9,10 @@ Date: 2024-11-07
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QLineEdit, QComboBox,
-    QLabel, QPushButton
+    QLabel, QPushButton, QMenu
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QFont, QColor, QAction, QCursor
 import logging
 from typing import List, Dict, Any, Optional
 
@@ -22,6 +22,9 @@ class StockListWidget(QWidget):
 
     # シグナル定義
     stock_selected = Signal(dict)  # 銘柄が選択されたときのシグナル
+    add_to_watchlist_requested = Signal(dict)  # ウォッチリスト追加要求
+    add_to_comparison_requested = Signal(dict)  # 比較追加要求
+    add_to_portfolio_requested = Signal(dict)  # ポートフォリオ追加要求
 
     def __init__(self):
         super().__init__()
@@ -112,6 +115,30 @@ class StockListWidget(QWidget):
 
         filter_layout.addStretch()
 
+        # アクションボタン（選択中の銘柄を追加）
+        self.action_button = QPushButton("選択中の銘柄を追加 ▼")
+        self.action_button.setEnabled(False)  # 初期状態は無効
+        self.action_button.setFixedHeight(28)
+        self.action_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1E90FF;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1C7ED6;
+            }
+            QPushButton:disabled {
+                background-color: #3A3A3A;
+                color: #666666;
+            }
+        """)
+        self.action_button.clicked.connect(self.show_action_menu)
+        filter_layout.addWidget(self.action_button)
+
         # 件数表示
         self.count_label = QLabel("0件")
         self.count_label.setStyleSheet("color: #B0B0B0;")
@@ -172,6 +199,13 @@ class StockListWidget(QWidget):
 
         # クリックイベント
         self.table.cellClicked.connect(self.on_row_clicked)
+
+        # 選択変更イベント（アクションボタンの有効/無効切り替え用）
+        self.table.itemSelectionChanged.connect(self.on_selection_changed)
+
+        # 右クリックメニュー設定
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
 
         # ソート有効化
         self.table.setSortingEnabled(True)
@@ -291,23 +325,34 @@ class StockListWidget(QWidget):
 
     def on_row_clicked(self, row: int, column: int):
         """行クリック時の処理"""
-        # コードを取得
+        # コードと権利月を取得
         code_item = self.table.item(row, 0)
-        if not code_item:
+        month_item = self.table.item(row, 2)
+
+        if not code_item or not month_item:
             return
 
         code = code_item.text()
+        # 権利月から数値を抽出（例: "3月" → 3）
+        month_text = month_item.text()
+        try:
+            rights_month = int(month_text.replace('月', ''))
+        except ValueError:
+            self.logger.warning(f"権利月の解析に失敗しました: {month_text}")
+            return
 
-        # 該当する銘柄データを探す
+        # コードと権利月の両方で該当する銘柄データを探す
         selected_stock = None
         for stock in self.stocks_data:
-            if stock.get('code') == code:
+            if stock.get('code') == code and stock.get('rights_month') == rights_month:
                 selected_stock = stock
                 break
 
         if selected_stock:
-            self.logger.info(f"銘柄が選択されました: {code} - {selected_stock.get('name')}")
+            self.logger.info(f"銘柄が選択されました: {code} ({rights_month}月) - {selected_stock.get('name')}")
             self.stock_selected.emit(selected_stock)
+        else:
+            self.logger.warning(f"銘柄データが見つかりません: {code} ({rights_month}月)")
 
     def get_selected_stock(self) -> Optional[Dict[str, Any]]:
         """選択中の銘柄データを取得"""
@@ -316,13 +361,111 @@ class StockListWidget(QWidget):
             return None
 
         code_item = self.table.item(current_row, 0)
-        if not code_item:
+        month_item = self.table.item(current_row, 2)
+
+        if not code_item or not month_item:
             return None
 
         code = code_item.text()
+        # 権利月から数値を抽出（例: "3月" → 3）
+        month_text = month_item.text()
+        try:
+            rights_month = int(month_text.replace('月', ''))
+        except ValueError:
+            return None
 
+        # コードと権利月の両方で該当する銘柄データを探す
         for stock in self.stocks_data:
-            if stock.get('code') == code:
+            if stock.get('code') == code and stock.get('rights_month') == rights_month:
                 return stock
 
         return None
+
+    def on_selection_changed(self):
+        """選択変更時の処理（アクションボタンの有効/無効切り替え）"""
+        has_selection = len(self.table.selectedItems()) > 0
+        self.action_button.setEnabled(has_selection)
+
+    def show_action_menu(self):
+        """アクションボタンのドロップダウンメニューを表示"""
+        stock_data = self.get_selected_stock()
+        if not stock_data:
+            return
+
+        # ドロップダウンメニューを作成
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                color: #E0E0E0;
+                border: 1px solid #404040;
+            }
+            QMenu::item {
+                padding: 8px 24px;
+            }
+            QMenu::item:selected {
+                background-color: #1E90FF;
+            }
+        """)
+
+        # メニュー項目
+        watchlist_action = QAction("⭐ ウォッチリストに追加", self)
+        watchlist_action.triggered.connect(lambda: self.add_to_watchlist_requested.emit(stock_data))
+        menu.addAction(watchlist_action)
+
+        comparison_action = QAction("📈 銘柄比較に追加", self)
+        comparison_action.triggered.connect(lambda: self.add_to_comparison_requested.emit(stock_data))
+        menu.addAction(comparison_action)
+
+        portfolio_action = QAction("💼 ポートフォリオに追加", self)
+        portfolio_action.triggered.connect(lambda: self.add_to_portfolio_requested.emit(stock_data))
+        menu.addAction(portfolio_action)
+
+        # ボタンの下にメニューを表示
+        button_pos = self.action_button.mapToGlobal(self.action_button.rect().bottomLeft())
+        menu.exec(button_pos)
+
+    def show_context_menu(self, position):
+        """右クリックメニューを表示"""
+        # 選択された行を取得
+        row = self.table.rowAt(position.y())
+        if row < 0:
+            return
+
+        # 選択された銘柄データを取得
+        self.table.selectRow(row)
+        stock_data = self.get_selected_stock()
+        if not stock_data:
+            return
+
+        # コンテキストメニューを作成
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D2D;
+                color: #E0E0E0;
+                border: 1px solid #404040;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+            }
+            QMenu::item:selected {
+                background-color: #1E90FF;
+            }
+        """)
+
+        # メニュー項目
+        watchlist_action = QAction("⭐ ウォッチリストに追加", self)
+        watchlist_action.triggered.connect(lambda: self.add_to_watchlist_requested.emit(stock_data))
+        menu.addAction(watchlist_action)
+
+        comparison_action = QAction("📈 銘柄比較に追加", self)
+        comparison_action.triggered.connect(lambda: self.add_to_comparison_requested.emit(stock_data))
+        menu.addAction(comparison_action)
+
+        portfolio_action = QAction("💼 ポートフォリオに追加", self)
+        portfolio_action.triggered.connect(lambda: self.add_to_portfolio_requested.emit(stock_data))
+        menu.addAction(portfolio_action)
+
+        # メニューを表示
+        menu.exec(self.table.viewport().mapToGlobal(position))

@@ -372,23 +372,34 @@ class WatchlistWidget(QWidget):
 
     def on_row_clicked(self, row: int, column: int):
         """行クリック時の処理"""
-        # コードを取得
+        # コードと権利月を取得
         code_item = self.table.item(row, 0)
-        if not code_item:
+        month_item = self.table.item(row, 2)
+
+        if not code_item or not month_item:
             return
 
         code = code_item.text()
+        # 権利月から数値を抽出（例: "3月" → 3）
+        month_text = month_item.text()
+        try:
+            rights_month = int(month_text.replace('月', ''))
+        except ValueError:
+            self.logger.warning(f"権利月の解析に失敗しました: {month_text}")
+            return
 
-        # 該当する銘柄データを探す
+        # コードと権利月の両方で該当する銘柄データを探す
         selected_stock = None
         for stock in self.watchlist_data:
-            if stock.get('code') == code:
+            if stock.get('code') == code and stock.get('rights_month') == rights_month:
                 selected_stock = stock
                 break
 
         if selected_stock:
-            self.logger.info(f"ウォッチリスト銘柄が選択されました: {code}")
+            self.logger.info(f"ウォッチリスト銘柄が選択されました: {code} ({rights_month}月)")
             self.stock_selected.emit(selected_stock)
+        else:
+            self.logger.warning(f"ウォッチリスト銘柄データが見つかりません: {code} ({rights_month}月)")
 
     def is_in_watchlist(self, code: str) -> bool:
         """

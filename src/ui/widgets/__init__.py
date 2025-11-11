@@ -10,6 +10,10 @@ from .stock_list_widget import StockListWidget
 from .chart_widget import ChartWidget
 from .detail_panel import DetailPanel, StockInfoCard, DetailStatsTable
 from .filter_panel import FilterPanel
+from .trade_history_widget import TradeHistoryWidget
+from .comparison_panel import ComparisonPanel
+from .portfolio_panel import PortfolioPanel
+from .risk_metrics_widget import RiskMetricsWidget
 
 __all__ = [
     'StockListWidget',
@@ -17,5 +21,9 @@ __all__ = [
     'DetailPanel',
     'StockInfoCard',
     'DetailStatsTable',
-    'FilterPanel'
+    'FilterPanel',
+    'TradeHistoryWidget',
+    'ComparisonPanel',
+    'PortfolioPanel',
+    'RiskMetricsWidget'
 ]

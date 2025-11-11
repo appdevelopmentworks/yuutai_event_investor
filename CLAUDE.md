@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Key Concept:** The app analyzes past 10 years of stock price data to determine the statistically optimal day to buy before the ex-dividend date (権利付最終日) to maximize returns from shareholder benefit events.
 
+**Future Extension:** The app is designed to support high-dividend stocks (高配当銘柄) in addition to shareholder benefit stocks. Database schema and CSV import templates are prepared. See `docs/FUTURE_FEATURES.md` for details.
+
 ## Running the Application
 
 ```bash
@@ -263,3 +265,25 @@ When modifying backtest logic:
 - 勝率 (shōritsu) = Win rate
 - 期待リターン (kitai ritān) = Expected return
 - 買入日 (kainyu bi) = Purchase date
+- 高配当 (kō haitō) = High dividend
+- 配当利回り (haitō rimawari) = Dividend yield
+
+## Important Configuration: kenrlast
+
+**kenrlast** determines how many business days before the month-end the ex-dividend date occurs:
+- Japan stocks: `kenrlast=2` (2 business days before month-end) - **Current default**
+- US stocks: `kenrlast=1` (1 business day before month-end)
+
+**Configuration location:** `config/settings.json`
+```json
+{
+  "kenrlast": 2
+}
+```
+
+**Future-proofing:** If Japan changes the rule to 1 business day (like US), simply change `kenrlast` to 1 and clear simulation cache. No code changes required.
+
+**Why rights_month instead of rights_date:**
+- `rights_date` (exact date) changes yearly and requires manual updates
+- `rights_month` (month only) is stable and calculated dynamically using `kenrlast`
+- This design supports future regulatory changes without schema modifications
