@@ -59,8 +59,28 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 依存パッケージをインストール
 pip install -r requirements.txt
 
+# データベースを初期化（初回のみ必須）
+python scripts/init_database.py
+
 # アプリケーションを起動
 python main.py
+```
+
+**重要**: 初回起動時は必ず `python scripts/init_database.py` を実行してデータベースを初期化してください。
+
+#### macOS/Linux での注意事項
+
+日本語フォント表示のため、以下のフォントがインストールされている必要があります：
+
+- **macOS**: Hiragino Sans（プリインストール済み）
+- **Linux**: Noto Sans CJK JP（要インストール）
+
+```bash
+# Ubuntu/Debian の場合
+sudo apt-get install fonts-noto-cjk
+
+# Fedora/RHEL の場合
+sudo dnf install google-noto-sans-cjk-jp-fonts
 ```
 
 ---

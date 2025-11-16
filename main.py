@@ -18,17 +18,31 @@ sys.path.insert(0, str(project_root))
 def main():
     """アプリケーションのメインエントリーポイント"""
     import logging
-    
+
     # ロギング設定
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Yuutai Event Investor v1.0.0 起動中...")
-    
+
     try:
+        # データベース初期化チェック
+        from src.core.database import DatabaseManager
+        db = DatabaseManager()
+
+        if not db.db_path.exists():
+            logger.error("データベースが初期化されていません")
+            print("\n" + "=" * 60)
+            print("エラー: データベースが初期化されていません")
+            print("=" * 60)
+            print("\n初回起動時は以下のコマンドを実行してください:")
+            print("  python scripts/init_database.py")
+            print("\n" + "=" * 60)
+            sys.exit(1)
+
         from PySide6.QtWidgets import QApplication
         # Phase 4統合版のMainWindowを使用
         from src.ui.main_window_v3 import MainWindow

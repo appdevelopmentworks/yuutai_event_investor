@@ -107,6 +107,14 @@ def fetch_and_save_stocks(source: str = None, month: int = None, mode: str = 'fa
                 # 既存のデータを確認
                 existing = db.get_stock_by_code(stock['code'])
 
+                # min_investment (投資金額) から min_shares (株数) に変換
+                # 仮定: 通常の単元株数は100株
+                min_shares = 100  # デフォルト値
+                if stock.get('min_investment') and stock.get('min_investment') > 0:
+                    # 最低投資金額から必要株数を逆算する場合は別途ロジック追加可能
+                    # 今はデフォルトの100株を使用
+                    min_shares = 100
+
                 # データベースに保存
                 conn = db.connect()
                 cursor = conn.cursor()
@@ -116,7 +124,7 @@ def fetch_and_save_stocks(source: str = None, month: int = None, mode: str = 'fa
                     cursor.execute("""
                         UPDATE stocks
                         SET name = ?, rights_month = ?, rights_date = ?,
-                            yuutai_genre = ?, yuutai_content = ?, min_investment = ?
+                            yuutai_genre = ?, yuutai_content = ?, min_shares = ?
                         WHERE code = ?
                     """, (
                         stock['name'],
@@ -124,7 +132,7 @@ def fetch_and_save_stocks(source: str = None, month: int = None, mode: str = 'fa
                         stock['rights_date'],
                         stock.get('yuutai_genre', ''),
                         stock.get('yuutai_content', ''),
-                        stock.get('min_investment', 0),
+                        min_shares,
                         stock['code']
                     ))
                     updated_count += 1
@@ -132,7 +140,7 @@ def fetch_and_save_stocks(source: str = None, month: int = None, mode: str = 'fa
                     # 新規挿入
                     cursor.execute("""
                         INSERT INTO stocks (code, name, rights_month, rights_date,
-                                          yuutai_genre, yuutai_content, min_investment)
+                                          yuutai_genre, yuutai_content, min_shares)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
                         stock['code'],
@@ -141,7 +149,7 @@ def fetch_and_save_stocks(source: str = None, month: int = None, mode: str = 'fa
                         stock['rights_date'],
                         stock.get('yuutai_genre', ''),
                         stock.get('yuutai_content', ''),
-                        stock.get('min_investment', 0)
+                        min_shares
                     ))
                     inserted_count += 1
 
