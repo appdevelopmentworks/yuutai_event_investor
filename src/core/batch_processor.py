@@ -9,20 +9,26 @@ Date: 2024-11-07
 import logging
 from typing import List, Dict, Any, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, Signal
 import time
+import threading
 
 
-class BatchCalculationWorker(QThread):
-    """
-    複数銘柄のバックテストを並列処理するワーカースレッド
-    """
-
-    # シグナル定義
+class BatchCalculationWorkerSignals(QObject):
+    """BatchCalculationWorker用のシグナル"""
     progress_updated = Signal(int, int)  # 現在の進捗, 全体数
     stock_completed = Signal(str, dict)  # 銘柄コード, 結果
     batch_completed = Signal(list)  # 全結果のリスト
     error_occurred = Signal(str, str)  # 銘柄コード, エラーメッセージ
+
+
+class BatchCalculationWorker:
+    """
+    複数銘柄のバックテストを並列処理するワーカー
+
+    Note: macOSでQThread + SQLiteの競合によるSIGSEGVクラッシュを回避するため、
+    QThreadではなくthreading.Threadを使用
+    """
 
     def __init__(
         self,
@@ -36,15 +42,41 @@ class BatchCalculationWorker(QThread):
             calculator: OptimalTimingCalculatorインスタンス
             max_workers: 同時実行スレッド数
         """
-        super().__init__()
         self.logger = logging.getLogger(__name__)
         self.stocks = stocks
         self.calculator = calculator
         self.max_workers = max_workers
         self.running = False
         self.results = []
+        self.signals = BatchCalculationWorkerSignals()
+        self._thread = None
 
-    def run(self):
+    @property
+    def progress_updated(self):
+        return self.signals.progress_updated
+
+    @property
+    def stock_completed(self):
+        return self.signals.stock_completed
+
+    @property
+    def batch_completed(self):
+        return self.signals.batch_completed
+
+    @property
+    def error_occurred(self):
+        return self.signals.error_occurred
+
+    def start(self):
+        """ワーカースレッドを開始"""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self):
+        """スレッドが実行中かどうか"""
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self):
         """スレッドのメイン処理"""
         self.logger.info(f"バッチ計算開始: {len(self.stocks)}銘柄, {self.max_workers}スレッド")
         self.running = True

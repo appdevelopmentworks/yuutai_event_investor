@@ -12,12 +12,13 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QSplitter, QStatusBar, QMessageBox,
     QProgressDialog, QTabWidget, QFileDialog, QMenu
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QFont, QAction
 import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import pandas as pd
+import threading
 
 from ..core.database import DatabaseManager
 from ..core.calculator import OptimalTimingCalculator
@@ -30,20 +31,46 @@ from ..utils.export import DataExporter, ScreenshotExporter
 from ..utils.notification import NotificationManager
 
 
-class AnalysisWorker(QThread):
-    """バックグラウンドでバックテストを実行するワーカー"""
-
+class AnalysisWorkerSignals(QObject):
+    """AnalysisWorker用のシグナル"""
     finished = Signal(dict)
     error = Signal(str)
 
+
+class AnalysisWorker:
+    """バックグラウンドでバックテストを実行するワーカー
+
+    Note: macOSでQThread + SQLiteの競合によるSIGSEGVクラッシュを回避するため、
+    QThreadではなくthreading.Threadを使用
+    """
+
     def __init__(self, ticker: str, rights_date: str):
-        super().__init__()
         self.ticker = ticker
         self.rights_date = rights_date
         self.logger = logging.getLogger(__name__)
+        self.signals = AnalysisWorkerSignals()
+        self._thread = None
 
-    def run(self):
+    @property
+    def finished(self):
+        return self.signals.finished
+
+    @property
+    def error(self):
+        return self.signals.error
+
+    def start(self):
+        """ワーカースレッドを開始"""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self):
+        """スレッドが実行中かどうか"""
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self):
         """バックテスト実行"""
+        fetcher = None
         try:
             self.logger.info(f"バックテスト開始: {self.ticker}")
 
@@ -54,30 +81,59 @@ class AnalysisWorker(QThread):
 
             if result:
                 self.logger.info(f"バックテスト完了: {self.ticker}")
-                self.finished.emit(result)
+                self.signals.finished.emit(result)
             else:
-                self.error.emit("分析結果が取得できませんでした")
+                self.signals.error.emit("分析結果が取得できませんでした")
 
         except Exception as e:
             self.logger.error(f"バックテストエラー: {e}", exc_info=True)
-            self.error.emit(f"分析エラー: {str(e)}")
+            self.signals.error.emit(f"分析エラー: {str(e)}")
+        finally:
+            if fetcher and hasattr(fetcher, 'close'):
+                fetcher.close()
 
 
-class TradeDetailsWorker(QThread):
-    """バックグラウンドでトレード詳細を取得するワーカー"""
-
+class TradeDetailsWorkerSignals(QObject):
+    """TradeDetailsWorker用のシグナル"""
     finished = Signal(dict)
     error = Signal(str)
 
+
+class TradeDetailsWorker:
+    """バックグラウンドでトレード詳細を取得するワーカー
+
+    Note: macOSでQThread + SQLiteの競合によるSIGSEGVクラッシュを回避するため、
+    QThreadではなくthreading.Threadを使用
+    """
+
     def __init__(self, ticker: str, rights_month: int, buy_days_before: int):
-        super().__init__()
         self.ticker = ticker
         self.rights_month = rights_month
         self.buy_days_before = buy_days_before
         self.logger = logging.getLogger(__name__)
+        self.signals = TradeDetailsWorkerSignals()
+        self._thread = None
 
-    def run(self):
+    @property
+    def finished(self):
+        return self.signals.finished
+
+    @property
+    def error(self):
+        return self.signals.error
+
+    def start(self):
+        """ワーカースレッドを開始"""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self):
+        """スレッドが実行中かどうか"""
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self):
         """トレード詳細取得"""
+        fetcher = None
         try:
             self.logger.info(f"トレード詳細取得開始: {self.ticker}, 月={self.rights_month}, 日数={self.buy_days_before}")
 
@@ -94,14 +150,17 @@ class TradeDetailsWorker(QThread):
                 win_count = len(trade_details.get('win_trades', pd.DataFrame()))
                 lose_count = len(trade_details.get('lose_trades', pd.DataFrame()))
                 self.logger.info(f"トレード詳細取得完了: {self.ticker}, 勝ち={win_count}, 負け={lose_count}")
-                self.finished.emit(trade_details)
+                self.signals.finished.emit(trade_details)
             else:
                 self.logger.warning(f"トレード詳細がNone: {self.ticker}")
-                self.error.emit("トレード詳細が取得できませんでした")
+                self.signals.error.emit("トレード詳細が取得できませんでした")
 
         except Exception as e:
             self.logger.error(f"トレード詳細取得エラー: {e}", exc_info=True)
-            self.error.emit(f"トレード詳細取得エラー: {str(e)}")
+            self.signals.error.emit(f"トレード詳細取得エラー: {str(e)}")
+        finally:
+            if fetcher and hasattr(fetcher, 'close'):
+                fetcher.close()
 
 
 class MainWindow(QMainWindow):
@@ -349,6 +408,31 @@ class MainWindow(QMainWindow):
         refresh_action = QAction("データ更新(&R)", self)
         refresh_action.triggered.connect(self.on_refresh_data)
         tools_menu.addAction(refresh_action)
+
+        tools_menu.addSeparator()
+
+        # 一括バックテストメニュー
+        batch_menu = tools_menu.addMenu("一括バックテスト(&B)")
+
+        # 現在の月の銘柄
+        batch_current_action = QAction("現在のフィルター条件の銘柄", self)
+        batch_current_action.triggered.connect(self.run_batch_backtest_current)
+        batch_menu.addAction(batch_current_action)
+
+        batch_menu.addSeparator()
+
+        # 各月
+        for month in range(1, 13):
+            action = QAction(f"{month}月の銘柄", self)
+            action.triggered.connect(lambda checked, m=month: self.run_batch_backtest_month(m))
+            batch_menu.addAction(action)
+
+        batch_menu.addSeparator()
+
+        # 全銘柄
+        batch_all_action = QAction("全銘柄（時間がかかります）", self)
+        batch_all_action.triggered.connect(self.run_batch_backtest_all)
+        batch_menu.addAction(batch_all_action)
 
         tools_menu.addSeparator()
 
@@ -945,15 +1029,141 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"トレード詳細追加エラー: {e}", exc_info=True)
 
+    def run_batch_backtest_current(self):
+        """現在のフィルター条件の銘柄で一括バックテスト"""
+        if not self.filtered_stocks:
+            QMessageBox.warning(self, "警告", "銘柄がありません。フィルター条件を確認してください。")
+            return
+        self._start_batch_backtest(self.filtered_stocks)
+
+    def run_batch_backtest_month(self, month: int):
+        """指定月の銘柄で一括バックテスト"""
+        stocks = self.db.get_all_stocks(rights_month=month)
+        if not stocks:
+            QMessageBox.warning(self, "警告", f"{month}月の銘柄がありません。")
+            return
+        self._start_batch_backtest(stocks)
+
+    def run_batch_backtest_all(self):
+        """全銘柄で一括バックテスト"""
+        stocks = self.db.get_all_stocks()
+        if not stocks:
+            QMessageBox.warning(self, "警告", "銘柄がありません。")
+            return
+
+        reply = QMessageBox.question(
+            self, "確認",
+            f"全 {len(stocks)} 銘柄のバックテストを実行します。\n"
+            "これには時間がかかる場合があります。続行しますか？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._start_batch_backtest(stocks)
+
+    def _start_batch_backtest(self, stocks: list):
+        """一括バックテストを開始"""
+        from ..core.batch_processor import BatchCalculationWorker
+
+        # 進捗ダイアログを作成
+        self.batch_progress = QProgressDialog(
+            "バックテストを実行中...", "キャンセル", 0, len(stocks), self
+        )
+        self.batch_progress.setWindowTitle("一括バックテスト")
+        self.batch_progress.setWindowModality(Qt.WindowModal)
+        self.batch_progress.setMinimumDuration(0)
+        self.batch_progress.setValue(0)
+
+        # 計算機を作成
+        fetcher = StockDataFetcher()
+        calculator = OptimalTimingCalculator(fetcher)
+
+        # ワーカーを作成
+        self.batch_worker = BatchCalculationWorker(stocks, calculator, max_workers=4)
+        self.batch_worker.progress_updated.connect(self._on_batch_progress)
+        self.batch_worker.stock_completed.connect(self._on_stock_completed)
+        self.batch_worker.batch_completed.connect(self._on_batch_completed)
+        self.batch_worker.error_occurred.connect(self._on_batch_error)
+
+        # キャンセルボタン
+        self.batch_progress.canceled.connect(self._on_batch_canceled)
+
+        # 開始
+        self.batch_worker.start()
+        self.statusBar().showMessage(f"一括バックテスト実行中: {len(stocks)}銘柄")
+
+    def _on_batch_progress(self, current: int, total: int):
+        """バッチ処理の進捗更新"""
+        if hasattr(self, 'batch_progress') and self.batch_progress:
+            self.batch_progress.setValue(current)
+            self.batch_progress.setLabelText(f"バックテスト実行中... ({current}/{total})")
+
+    def _on_stock_completed(self, code: str, result: dict):
+        """1銘柄のバックテスト完了"""
+        self.logger.info(f"バックテスト完了: {code}")
+
+        # 結果をDBに保存
+        try:
+            rights_month = result.get('rights_month', 0)
+            all_results = result.get('all_results', [])
+
+            # all_resultsの各日数の結果を保存
+            for day_result in all_results:
+                # Calculatorは'days_before'を使用
+                buy_days_before = day_result.get('days_before', day_result.get('buy_days_before', 0))
+                self.db.insert_simulation_cache(
+                    code=code,
+                    rights_month=rights_month,
+                    buy_days_before=buy_days_before,
+                    win_count=day_result.get('win_count', 0),
+                    lose_count=day_result.get('lose_count', 0),
+                    win_rate=day_result.get('win_rate', 0.0),
+                    expected_return=day_result.get('expected_return', 0.0),
+                    avg_win_return=day_result.get('avg_win_return', 0.0),
+                    max_win_return=day_result.get('max_win_return', 0.0),
+                    avg_lose_return=day_result.get('avg_lose_return', 0.0),
+                    max_lose_return=day_result.get('max_lose_return', 0.0)
+                )
+        except Exception as e:
+            self.logger.error(f"バックテスト結果の保存エラー: {code} - {e}")
+
+    def _on_batch_completed(self, results: list):
+        """バッチ処理完了"""
+        if hasattr(self, 'batch_progress') and self.batch_progress:
+            self.batch_progress.close()
+
+        success_count = len(results)
+        QMessageBox.information(
+            self, "完了",
+            f"一括バックテストが完了しました。\n成功: {success_count}件"
+        )
+        self.statusBar().showMessage(f"一括バックテスト完了: {success_count}件成功")
+
+        # リストを更新
+        self.load_initial_data()
+
+    def _on_batch_error(self, code: str, error: str):
+        """バッチ処理エラー"""
+        self.logger.error(f"バッチエラー: {code} - {error}")
+
+    def _on_batch_canceled(self):
+        """バッチ処理キャンセル"""
+        if hasattr(self, 'batch_worker') and self.batch_worker:
+            self.batch_worker.stop()
+        self.statusBar().showMessage("一括バックテストがキャンセルされました")
+
     def closeEvent(self, event):
         """ウィンドウを閉じる時の処理"""
+        # スレッドベースのワーカーは daemon=True なので自動終了
+        # ただしログは残す
         if self.current_analysis_worker and self.current_analysis_worker.isRunning():
-            self.current_analysis_worker.quit()
-            self.current_analysis_worker.wait()
+            self.logger.info("分析ワーカーが実行中です")
 
         if self.current_trade_details_worker and self.current_trade_details_worker.isRunning():
-            self.current_trade_details_worker.quit()
-            self.current_trade_details_worker.wait()
+            self.logger.info("トレード詳細ワーカーが実行中です")
+
+        if hasattr(self, 'batch_worker') and self.batch_worker and self.batch_worker.isRunning():
+            self.batch_worker.stop()
+            self.logger.info("バッチワーカーを停止しました")
 
         self.logger.info("アプリケーションを終了します")
         event.accept()

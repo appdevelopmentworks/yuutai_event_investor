@@ -224,6 +224,46 @@ Card height is 220px (increased from 180px).
 
 5. **PDF Export:** Requires `reportlab` library. If missing, PDF export will log an error but won't crash.
 
+6. **QThread + SQLite Crash on macOS:** Using QThread with SQLite causes SIGSEGV crashes on macOS due to thread affinity issues.
+
+   **Solution:** Use `threading.Thread` with `QObject` signals instead of `QThread`:
+   ```python
+   # BAD - causes crash on macOS
+   class MyWorker(QThread):
+       finished = Signal(dict)
+       def run(self):
+           db = DatabaseManager()
+           # ... SQLite operations
+           self.finished.emit(result)
+
+   # GOOD - works on all platforms
+   class MyWorkerSignals(QObject):
+       finished = Signal(dict)
+
+   class MyWorker:
+       def __init__(self):
+           self.signals = MyWorkerSignals()
+           self._thread = None
+
+       @property
+       def finished(self):
+           return self.signals.finished
+
+       def start(self):
+           self._thread = threading.Thread(target=self._run, daemon=True)
+           self._thread.start()
+
+       def _run(self):
+           fetcher = StockDataFetcher()
+           try:
+               # ... SQLite operations
+               self.signals.finished.emit(result)
+           finally:
+               fetcher.close()  # Always cleanup!
+   ```
+
+   **Root cause:** macOS has stricter thread affinity for SQLite connections than Windows/Linux.
+
 ## Version History
 
 - **v1.0.0** - Initial release with basic functionality
@@ -233,6 +273,11 @@ Card height is 220px (increased from 180px).
   - Batch processing with multi-threading
   - Keyboard shortcuts
   - Database optimizations
+- **v1.1.1** - macOS crash fix:
+  - Fixed SIGSEGV crash on macOS caused by QThread + SQLite conflict
+  - Replaced QThread with Python's threading.Thread for AnalysisWorker and TradeDetailsWorker
+  - Added DataFetcher.close() method for proper resource cleanup
+  - Added DatabaseManager.close() method for connection cleanup
 
 ## Development Workflow
 
@@ -242,7 +287,7 @@ When adding new features:
 2. **Calculator changes** → Ensure return dict matches expected keys in UI widgets
 3. **UI changes** → Update corresponding widget in `src/ui/widgets/`
 4. **Export features** → Add to appropriate exporter class in `export.py`
-5. **Background tasks** → Use QThread, emit signals for UI updates
+5. **Background tasks** → Use `threading.Thread` with `QObject` signals (NOT QThread - causes SQLite crashes on macOS)
 
 When modifying backtest logic:
 - Changes to `Calculator.calculate_returns()` affect all historical analysis

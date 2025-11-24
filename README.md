@@ -294,6 +294,18 @@ yuutai_event_investor/
 
 ## 🔄 更新履歴
 
+### Version 1.2.0 (2025-11-24)
+- **macOS対応**: QThread + SQLiteの競合によるクラッシュ問題を修正
+  - AnalysisWorker、TradeDetailsWorker、BatchCalculationWorkerをthreading.Threadに変更
+  - DataFetcher.close()、DatabaseManager.close()メソッド追加
+- **一括バックテスト機能**: メニューから月別・全銘柄の一括バックテストが可能に
+  - ツール → 一括バックテスト から実行
+  - 進捗ダイアログ付き、キャンセル可能
+  - 結果はDBに自動保存されグリッドに反映
+- **リスク分析の改善**: 空データによるエラーを修正
+  - FutureWarning（pd.concat）を解消
+  - 最大ドローダウン計算の空シーケンスエラーを修正
+
 ### Version 1.1.0 (2025-11-07)
 - スクレイピング機能の大幅強化
   - 3つの優待情報サイトに対応（kabuyutai.com、yutai.net-ir.ne.jp、96ut.com）

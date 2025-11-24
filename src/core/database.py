@@ -33,12 +33,30 @@ class DatabaseManager:
         
         # データベースディレクトリが存在しない場合は作成
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
+        # 持続的な接続（オプション）
+        self._persistent_conn = None
+
     def connect(self) -> sqlite3.Connection:
         """データベース接続を取得"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # 結果を辞書形式で取得
         return conn
+
+    def close(self):
+        """
+        リソースをクリーンアップ
+
+        Note: macOSでのSQLite接続リークを防ぐため、
+        スレッド終了時に呼び出すことを推奨
+        """
+        try:
+            if self._persistent_conn:
+                self._persistent_conn.close()
+                self._persistent_conn = None
+                self.logger.debug("DatabaseManager 接続をクローズしました")
+        except Exception as e:
+            self.logger.error(f"DatabaseManager クローズエラー: {e}")
     
     def initialize_database(self) -> bool:
         """

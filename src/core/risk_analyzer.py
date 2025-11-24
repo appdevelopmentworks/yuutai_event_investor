@@ -30,7 +30,7 @@ class RiskAnalyzer:
             Dict: 最大ドローダウン情報
         """
         try:
-            if returns.empty:
+            if returns.empty or len(returns) < 2:
                 return {
                     'max_drawdown': 0.0,
                     'max_drawdown_duration': 0,
@@ -54,7 +54,16 @@ class RiskAnalyzer:
 
             # ドローダウン期間を計算
             # 最大ドローダウンの開始点を探す
-            peak_idx = running_max[:max_dd_idx].idxmax()
+            peak_subset = running_max[:max_dd_idx]
+            if peak_subset.empty or len(peak_subset) == 0:
+                # データが不十分な場合
+                return {
+                    'max_drawdown': float(max_drawdown),
+                    'max_drawdown_duration': 0,
+                    'current_drawdown': float(drawdown.iloc[-1]) if len(drawdown) > 0 else 0.0
+                }
+
+            peak_idx = peak_subset.idxmax()
             drawdown_duration = (max_dd_idx - peak_idx).days if hasattr(max_dd_idx - peak_idx, 'days') else len(drawdown[peak_idx:max_dd_idx])
 
             # 現在のドローダウン
@@ -374,7 +383,12 @@ class RiskAnalyzer:
                 elif 'リターン(%)' in lose_trades.columns:
                     lose_returns = lose_trades['リターン(%)']
 
-            all_returns = pd.concat([win_returns, lose_returns], ignore_index=True)
+            # 空のSeriesを除外してからconcat（FutureWarning回避）
+            series_to_concat = [s for s in [win_returns, lose_returns] if not s.empty]
+            if series_to_concat:
+                all_returns = pd.concat(series_to_concat, ignore_index=True)
+            else:
+                all_returns = pd.Series(dtype=float)
 
             if all_returns.empty:
                 return {

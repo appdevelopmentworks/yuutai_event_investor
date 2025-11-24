@@ -277,6 +277,20 @@ class DataFetcher:
             self.logger.error(f"最新株価取得エラー: {ticker} - {e}")
             return None
 
+    def close(self):
+        """
+        リソースをクリーンアップ
+
+        Note: macOSでのSQLite接続リークを防ぐため、
+        スレッド終了時に呼び出すことを推奨
+        """
+        try:
+            if self.db_manager:
+                self.db_manager.close()
+                self.logger.debug("DataFetcher リソースをクリーンアップしました")
+        except Exception as e:
+            self.logger.error(f"DataFetcher クリーンアップエラー: {e}")
+
 
 # エイリアス（互換性のため）
 StockDataFetcher = DataFetcher
