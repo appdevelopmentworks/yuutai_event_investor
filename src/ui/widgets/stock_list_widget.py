@@ -17,6 +17,23 @@ import logging
 from typing import List, Dict, Any, Optional
 
 
+class NumericTableWidgetItem(QTableWidgetItem):
+    """数値ソート用のカスタムQTableWidgetItem"""
+
+    def __init__(self, text: str, numeric_value: Optional[float] = None):
+        super().__init__(text)
+        self.numeric_value = numeric_value
+
+    def __lt__(self, other):
+        """ソート時の比較演算子"""
+        if isinstance(other, NumericTableWidgetItem):
+            # 両方が数値を持つ場合は数値で比較
+            self_val = self.numeric_value if self.numeric_value is not None else float('-inf')
+            other_val = other.numeric_value if other.numeric_value is not None else float('-inf')
+            return self_val < other_val
+        return super().__lt__(other)
+
+
 class StockListWidget(QWidget):
     """銘柄リストウィジェット"""
 
@@ -253,21 +270,30 @@ class StockListWidget(QWidget):
             name_item = QTableWidgetItem(stock.get('name', ''))
             self.table.setItem(row, 1, name_item)
 
-            # 権利月
+            # 権利月（数値ソート対応）
             month = stock.get('rights_month', '')
-            month_item = QTableWidgetItem(f"{month}月" if month else '')
+            month_item = NumericTableWidgetItem(
+                f"{month}月" if month else '',
+                float(month) if month else None
+            )
             month_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 2, month_item)
 
-            # 最適日数
+            # 最適日数（数値ソート対応）
             optimal_days = stock.get('optimal_days', '')
-            days_item = QTableWidgetItem(f"{optimal_days}日前" if optimal_days else '-')
+            days_item = NumericTableWidgetItem(
+                f"{optimal_days}日前" if optimal_days else '-',
+                float(optimal_days) if optimal_days else None
+            )
             days_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 3, days_item)
 
-            # 勝率
+            # 勝率（数値ソート対応）
             win_rate = stock.get('win_rate', 0)
-            win_rate_item = QTableWidgetItem(f"{win_rate*100:.1f}%" if win_rate else '-')
+            win_rate_item = NumericTableWidgetItem(
+                f"{win_rate*100:.1f}%" if win_rate else '-',
+                float(win_rate) if win_rate else None
+            )
             win_rate_item.setTextAlignment(Qt.AlignCenter)
             # 勝率が高い場合は緑色
             if win_rate and win_rate >= 0.7:
@@ -276,9 +302,12 @@ class StockListWidget(QWidget):
                 win_rate_item.setForeground(QColor(250, 204, 21))  # 黄色
             self.table.setItem(row, 4, win_rate_item)
 
-            # 期待値
+            # 期待値（数値ソート対応）
             expected_return = stock.get('expected_return', 0)
-            return_item = QTableWidgetItem(f"{expected_return:+.2f}%" if expected_return else '-')
+            return_item = NumericTableWidgetItem(
+                f"{expected_return:+.2f}%" if expected_return else '-',
+                float(expected_return) if expected_return else None
+            )
             return_item.setTextAlignment(Qt.AlignCenter)
             # 期待値がプラスの場合は緑色、マイナスの場合は赤色
             if expected_return and expected_return > 0:

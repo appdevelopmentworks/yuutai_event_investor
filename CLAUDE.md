@@ -125,6 +125,15 @@ MainWindow (main_window_v3.py) - Current production version
 - `max_lose_return` (NOT `max_loss`)
 - `avg_lose_return` (NOT `avg_loss_return`)
 
+**Key Name Mismatch:** `all_results` uses `days_before` but DB uses `buy_days_before`:
+```python
+# Calculator output
+{'days_before': 52, 'win_rate': 0.6, ...}
+
+# When saving to DB, use:
+buy_days_before = day_result.get('days_before', day_result.get('buy_days_before', 0))
+```
+
 ### Database Schema
 
 **Core Tables:**
@@ -147,14 +156,17 @@ MainWindow (main_window_v3.py) - Current production version
 ## Multi-threading Architecture
 
 ### Backtest Processing
-- `BatchCalculationWorker` (QThread) - Parallel backtest for multiple stocks
+- `BatchCalculationWorker` - Parallel backtest for multiple stocks (uses `threading.Thread` + `QObject` signals)
 - Uses `ThreadPoolExecutor` with configurable `max_workers` (default: 4)
 - Progress tracking via Qt signals: `progress_updated`, `stock_completed`, `batch_completed`
+- Access via menu: Tools → Batch Backtest (月別 or 全銘柄)
 
 ### Notification System
-- `NotificationWorker` (QThread) - Background notification checker
+- `NotificationWorker` - Background notification checker (uses `threading.Thread`)
 - `NotificationScheduler` - Time-based notification (default: 9:00, 15:00)
 - Desktop notifications via `DesktopNotifier` (Windows/macOS/Linux)
+
+**Note:** All background workers use `threading.Thread` instead of `QThread` to avoid SQLite crashes on macOS. See Common Pitfalls #6.
 
 ## Key File Relationships
 
