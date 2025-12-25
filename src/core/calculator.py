@@ -253,6 +253,9 @@ class Calculator:
             all_results.sort(key=lambda x: x['score'], reverse=True)
             optimal = all_results[0]
 
+            # チャート描画のため、日数順に戻す
+            all_results.sort(key=lambda x: x['days_before'])
+
             self.logger.info(
                 f"最適タイミング発見: {ticker} - "
                 f"{optimal['days_before']}日前 "

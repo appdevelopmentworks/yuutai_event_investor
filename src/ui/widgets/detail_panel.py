@@ -41,8 +41,12 @@ class StockInfoCard(QWidget):
         layout.setContentsMargins(20, 15, 20, 15)
         layout.setSpacing(10)
 
-        # タイトル行
-        title_layout = QHBoxLayout()
+        # タイトル行（コンテナでマージンを追加）
+        title_container = QWidget()
+        title_container.setStyleSheet("border: none;")
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(12, 0, 12, 0)
+        title_layout.setSpacing(10)
 
         self.name_label = QLabel("銘柄を選択してください")
         self.name_label.setFont(QFont("Meiryo", 14, QFont.Bold))
@@ -53,10 +57,16 @@ class StockInfoCard(QWidget):
 
         self.code_label = QLabel("")
         self.code_label.setFont(QFont("Meiryo", 11))
-        self.code_label.setStyleSheet("color: #B0B0B0; border: none;")
+        self.code_label.setStyleSheet("""
+            color: #B0B0B0;
+            border: none;
+            background-color: #3A3A3A;
+            border-radius: 12px;
+            padding: 4px 12px;
+        """)
         title_layout.addWidget(self.code_label)
 
-        layout.addLayout(title_layout)
+        layout.addWidget(title_container)
 
         # 統計情報グリッド
         self.stats_grid = QGridLayout()
@@ -84,19 +94,21 @@ class StockInfoCard(QWidget):
         """統計ラベルを作成"""
         container = QWidget()
         container.setStyleSheet("border: none;")
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(3)
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(12, 6, 12, 6)
+        container_layout.setSpacing(10)
 
         # タイトル
         title_label = QLabel(title)
-        title_label.setFont(QFont("Meiryo", 9))
+        title_label.setFont(QFont("Meiryo", 10))
         title_label.setStyleSheet("color: #B0B0B0; border: none;")
         container_layout.addWidget(title_label)
 
+        container_layout.addStretch()
+
         # 値
         value_label = QLabel(value)
-        value_label.setFont(QFont("Meiryo", 13, QFont.Bold))
+        value_label.setFont(QFont("Meiryo", 10, QFont.Bold))
         value_label.setStyleSheet(f"color: {color}; border: none;")
         container_layout.addWidget(value_label)
 
@@ -200,11 +212,20 @@ class DetailStatsTable(QWidget):
         layout.setContentsMargins(20, 15, 20, 15)
         layout.setSpacing(10)
 
-        # タイトル
+        # タイトル（データ行と同じスタイル）
+        title_container = QWidget()
+        title_container.setStyleSheet("border: none;")
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(12, 6, 12, 6)
+        title_layout.setSpacing(0)
+
         title = QLabel("詳細統計")
-        title.setFont(QFont("Meiryo", 12, QFont.Bold))
+        title.setFont(QFont("Meiryo", 11, QFont.Bold))
         title.setStyleSheet("color: #E0E0E0; border: none;")
-        layout.addWidget(title)
+        title_layout.addWidget(title)
+        title_layout.addStretch()
+
+        layout.addWidget(title_container)
 
         # 統計情報グリッド
         self.stats_layout = QVBoxLayout()
@@ -226,7 +247,7 @@ class DetailStatsTable(QWidget):
         row = QWidget()
         row.setStyleSheet("border: none;")
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 5, 0, 5)
+        row_layout.setContentsMargins(12, 6, 12, 6)
         row_layout.setSpacing(10)
 
         # ラベル

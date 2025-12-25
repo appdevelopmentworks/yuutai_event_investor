@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import pandas as pd
 import threading
+import json
 
 from ..core.database import DatabaseManager
 from ..core.calculator import OptimalTimingCalculator
@@ -179,6 +180,9 @@ class MainWindow(QMainWindow):
 
         # 通知マネージャー
         self.notification_manager = NotificationManager(self.db)
+
+        # 現在の設定を読み込む
+        self.current_settings = self._load_settings()
 
         # 現在のデータ
         self.all_stocks = []
@@ -952,7 +956,34 @@ class MainWindow(QMainWindow):
     def on_settings_changed(self, settings: Dict[str, Any]):
         """設定が変更された時の処理"""
         self.logger.info(f"設定が変更されました: {settings}")
-        # TODO: 設定を適用
+
+        # データ取得期間の変更をチェック
+        old_period = self._get_period_value(self.current_settings.get('data_period', '10y'))
+        new_period = self._get_period_value(settings.get('data_period', '10y'))
+
+        if new_period > old_period:
+            # 期間が長くなった場合、キャッシュをクリア
+            reply = QMessageBox.question(
+                self,
+                "キャッシュクリア確認",
+                f"データ取得期間が変更されました。\n"
+                f"より正確な計算のため、既存のバックテスト結果を削除して\n"
+                f"再計算する必要があります。削除しますか？\n\n"
+                f"（削除しないと古い期間のデータで計算された結果が残ります）",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self._clear_simulation_cache()
+                QMessageBox.information(
+                    self,
+                    "完了",
+                    "キャッシュをクリアしました。\n"
+                    "次回の銘柄選択時に新しい設定で再計算されます。"
+                )
+
+        # 設定を更新
+        self.current_settings = settings
 
     def on_send_to_portfolio(self, stocks: List[Dict]):
         """比較パネルからポートフォリオパネルに銘柄を送信"""
@@ -1150,6 +1181,70 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'batch_worker') and self.batch_worker:
             self.batch_worker.stop()
         self.statusBar().showMessage("一括バックテストがキャンセルされました")
+
+    def _load_settings(self) -> Dict[str, Any]:
+        """設定を読み込む"""
+        try:
+            config_path = Path(__file__).parent.parent.parent / "config" / "settings.json"
+
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                # デフォルト設定
+                return self._get_default_settings()
+
+        except Exception as e:
+            self.logger.error(f"設定読み込みエラー: {e}")
+            return self._get_default_settings()
+
+    def _get_default_settings(self) -> Dict[str, Any]:
+        """デフォルト設定を取得"""
+        return {
+            'database_path': 'data/yuutai.db',
+            'auto_update_on_startup': False,
+            'show_watchlist_on_startup': True,
+            'update_interval_days': 7,
+            'cache_expiry_days': 7,
+            'data_period': '10y',
+            'max_days_before': 120,
+            'min_trade_count': 3,
+            'enable_notifications': True,
+            'notify_days_before': 7,
+            'theme': 'dark',
+            'font_size': 10,
+            'show_chart_grid': True,
+            'show_chart_legend': True
+        }
+
+    def _get_period_value(self, period: str) -> int:
+        """期間文字列を数値に変換（比較用）"""
+        period_map = {
+            '1y': 1, '3y': 3, '5y': 5, '10y': 10,
+            '15y': 15, '20y': 20, 'max': 999
+        }
+        return period_map.get(period, 10)
+
+    def _clear_simulation_cache(self):
+        """シミュレーションキャッシュを全削除"""
+        try:
+            conn = self.db.connect()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM simulation_cache")
+            conn.commit()
+            conn.close()
+            self.logger.info("シミュレーションキャッシュを全削除しました")
+
+            # UIをリフレッシュ
+            self.load_initial_data()
+
+        except Exception as e:
+            self.logger.error(f"キャッシュクリアエラー: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "エラー",
+                f"キャッシュのクリアに失敗しました:\n{str(e)}"
+            )
 
     def closeEvent(self, event):
         """ウィンドウを閉じる時の処理"""
