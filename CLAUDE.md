@@ -211,13 +211,22 @@ data["権利確定日"] = data["Month"] != data["MonthSft"]
 data["権利付最終日"] = data["権利確定日"].shift(-kenrlast)
 ```
 
-### StockInfoCard Display Bug Fix
-The card shows 6 metrics in a 3×2 grid (increased from 4 in 2×2):
+### StockInfoCard Layout (Updated in v1.1.0)
+The card shows 6 metrics in a 3×2 grid with horizontal layout:
 - Row 0: 最適買入日, 勝率
 - Row 1: 期待リターン, 総トレード
 - Row 2: 平均勝ち, 平均負け
 
-Card height is 220px (increased from 180px).
+**Layout style (v1.1.0):**
+- Each metric uses horizontal layout (title on left, value on right with stretch spacer)
+- Font size: 10pt for both title and value
+- Margins: (10, 8, 10, 8) for each card
+- Row margins: (12, 6, 12, 6)
+
+**Previous layout (v1.0.0):**
+- Vertical layout (title stacked above value)
+- Font size: 10pt title, 12pt value
+- Card height: 220px (increased from 180px)
 
 ## Common Pitfalls
 
@@ -276,20 +285,75 @@ Card height is 220px (increased from 180px).
 
    **Root cause:** macOS has stricter thread affinity for SQLite connections than Windows/Linux.
 
+7. **Matplotlib Chart Order Dependency (Fixed in v1.1.0):** matplotlib's `ax.plot()` draws lines in the order data appears in arrays. If X-axis values are not sorted, the chart will show zigzag lines.
+
+   **Problem:** In `calculator.py`, `all_results` was sorted by score (descending) for finding optimal timing, resulting in non-sequential days (e.g., 90, 52, 103, 45...). This caused charts to display incorrectly on first click.
+
+   **Solution:** Always sort data by X-axis values before passing to matplotlib:
+   ```python
+   # Find optimal by score
+   all_results.sort(key=lambda x: x['score'], reverse=True)
+   optimal = all_results[0]
+
+   # CRITICAL: Resort by days_before for chart display
+   all_results.sort(key=lambda x: x['days_before'])
+   ```
+
+   **Location:** `calculator.py:257`
+
+8. **Cache Invalidation on Settings Change (Added in v1.1.0):** When `data_period` in settings increases (e.g., "10y" → "max"), cached simulation results become stale because the cache doesn't store the period used.
+
+   **Solution:** Detect period increases in `on_settings_changed()` and prompt user to clear `simulation_cache`:
+   ```python
+   def on_settings_changed(self, settings: Dict[str, Any]):
+       old_period = self._get_period_value(self.current_settings.get('data_period', '10y'))
+       new_period = self._get_period_value(settings.get('data_period', '10y'))
+
+       if new_period > old_period:
+           # Prompt user to clear cache
+           reply = QMessageBox.question(self, "キャッシュのクリア", ...)
+           if reply == QMessageBox.Yes:
+               self._clear_simulation_cache()
+   ```
+
+   **Location:** `main_window_v3.py:1141-1171`
+
+9. **Method Name for Data Reload:** Use `self.load_initial_data()` to reload stock data and recalculate, NOT `self.load_stocks()` (which doesn't exist).
+
+   **Common mistake:**
+   ```python
+   # WRONG - causes AttributeError
+   self.load_stocks()
+
+   # CORRECT
+   self.load_initial_data()
+   ```
+
+   **Location:** `main_window_v3.py:1239`
+
 ## Version History
 
-- **v1.0.0** - Initial release with basic functionality
-- **v1.1.0** - Phase 5 additions:
+- **v1.0.0** (2025-11-07) - Initial release with basic functionality
   - Desktop notifications (multi-platform)
   - PDF export
   - Batch processing with multi-threading
   - Keyboard shortcuts
   - Database optimizations
-- **v1.1.1** - macOS crash fix:
-  - Fixed SIGSEGV crash on macOS caused by QThread + SQLite conflict
-  - Replaced QThread with Python's threading.Thread for AnalysisWorker and TradeDetailsWorker
-  - Added DataFetcher.close() method for proper resource cleanup
-  - Added DatabaseManager.close() method for connection cleanup
+  - macOS crash fix (QThread → threading.Thread for SQLite compatibility)
+
+- **v1.1.0** (2025-12-25) - Bug fixes and UI improvements:
+  - **Data Update Feature**: Implemented data refresh button with DataRefreshWorker
+    - Background scraping with ScraperManager
+    - Progress dialog with detailed results
+    - Automatic database save and list reload
+  - **Cache Invalidation**: Auto-detect settings changes and prompt cache clear
+  - **Chart Display Fix**: Fixed zigzag lines on first click (calculator.py:257)
+  - **UI/UX Improvements**:
+    - Info cards changed to horizontal layout
+    - Margins optimized (12px horizontal, 6-8px vertical)
+    - Stock code badge styling
+    - Detail stats header alignment
+  - See `docs/dev_log_2025-12-25.md` for detailed development notes
 
 ## Development Workflow
 

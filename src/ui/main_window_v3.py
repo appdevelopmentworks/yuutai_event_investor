@@ -100,6 +100,99 @@ class TradeDetailsWorkerSignals(QObject):
     error = Signal(str)
 
 
+class DataRefreshWorkerSignals(QObject):
+    """DataRefreshWorker用のシグナル"""
+    finished = Signal(dict)
+    error = Signal(str)
+
+
+class DataRefreshWorker:
+    """バックグラウンドでデータ更新（スクレイピング）を実行するワーカー
+
+    Note: macOSでQThread + SQLiteの競合によるSIGSEGVクラッシュを回避するため、
+    QThreadではなくthreading.Threadを使用
+    """
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.signals = DataRefreshWorkerSignals()
+        self._thread = None
+
+    @property
+    def finished(self):
+        return self.signals.finished
+
+    @property
+    def error(self):
+        return self.signals.error
+
+    def start(self):
+        """ワーカースレッドを開始"""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def isRunning(self):
+        """スレッドが実行中かどうか"""
+        return self._thread is not None and self._thread.is_alive()
+
+    def _run(self):
+        """データ更新実行"""
+        try:
+            self.logger.info("データ更新開始")
+
+            # ScraperManagerをインポート
+            from ..scrapers.scraper_manager import ScraperManager
+            from ..core.database import DatabaseManager
+
+            # スクレイパーマネージャーを初期化
+            manager = ScraperManager()
+            db = DatabaseManager()
+
+            # 全月のデータを取得（フォールバック戦略）
+            stocks = manager.scrape_with_fallback(month=None)
+
+            if not stocks:
+                self.signals.error.emit("データを取得できませんでした")
+                return
+
+            self.logger.info(f"スクレイピング完了: {len(stocks)}件")
+
+            # データベースに保存
+            success_count = 0
+            error_count = 0
+
+            for stock in stocks:
+                try:
+                    # 既存データを更新または新規追加
+                    db.add_stock(
+                        code=stock['code'],
+                        name=stock['name'],
+                        rights_month=stock.get('rights_month'),
+                        rights_date=stock.get('rights_date'),
+                        yuutai_genre=stock.get('yuutai_genre'),
+                        yuutai_content=stock.get('yuutai_content')
+                    )
+                    success_count += 1
+                except Exception as e:
+                    self.logger.error(f"銘柄保存エラー {stock.get('code')}: {e}")
+                    error_count += 1
+
+            db.close()
+
+            result = {
+                'total': len(stocks),
+                'success': success_count,
+                'error': error_count
+            }
+
+            self.logger.info(f"データベース保存完了: 成功={success_count}, エラー={error_count}")
+            self.signals.finished.emit(result)
+
+        except Exception as e:
+            self.logger.error(f"データ更新エラー: {e}", exc_info=True)
+            self.signals.error.emit(f"データ更新エラー: {str(e)}")
+
+
 class TradeDetailsWorker:
     """バックグラウンドでトレード詳細を取得するワーカー
 
@@ -189,6 +282,7 @@ class MainWindow(QMainWindow):
         self.filtered_stocks = []
         self.current_analysis_worker = None
         self.current_trade_details_worker = None
+        self.current_data_refresh_worker = None
         self.current_selected_stock = None
         self.current_result = None
 
@@ -941,11 +1035,102 @@ class MainWindow(QMainWindow):
 
     def on_refresh_data(self):
         """データ更新ボタンクリック時の処理"""
-        QMessageBox.information(
+        # 既にデータ更新中の場合は何もしない
+        if self.current_data_refresh_worker and self.current_data_refresh_worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "データ更新中",
+                "データ更新が既に実行中です。\n完了するまでお待ちください。"
+            )
+            return
+
+        # 確認ダイアログ
+        reply = QMessageBox.question(
             self,
-            "データ更新",
-            "データ更新機能は現在開発中です。\nスクレイピング機能の実装が必要です。"
+            "データ更新確認",
+            "優待銘柄データをウェブサイトから取得して更新します。\n"
+            "この処理には数分かかる場合があります。\n\n"
+            "続行しますか？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # プログレスダイアログを表示
+        self.refresh_progress = QProgressDialog(
+            "優待銘柄データを取得中...\nしばらくお待ちください。",
+            "キャンセル",
+            0, 0,  # 不定期間（インディケーター）
+            self
+        )
+        self.refresh_progress.setWindowTitle("データ更新")
+        self.refresh_progress.setWindowModality(Qt.WindowModal)
+        self.refresh_progress.setMinimumDuration(0)
+        self.refresh_progress.setCancelButton(None)  # キャンセル不可
+        self.refresh_progress.show()
+
+        # ワーカーを作成して開始
+        self.current_data_refresh_worker = DataRefreshWorker()
+        self.current_data_refresh_worker.finished.connect(self.on_data_refresh_finished)
+        self.current_data_refresh_worker.error.connect(self.on_data_refresh_error)
+        self.current_data_refresh_worker.start()
+
+        self.status_bar.showMessage("データ更新を開始しました...")
+        self.logger.info("データ更新を開始")
+
+    def on_data_refresh_finished(self, result: Dict[str, Any]):
+        """データ更新完了時の処理"""
+        try:
+            # プログレスダイアログを閉じる
+            if hasattr(self, 'refresh_progress') and self.refresh_progress:
+                self.refresh_progress.close()
+
+            total = result.get('total', 0)
+            success = result.get('success', 0)
+            error = result.get('error', 0)
+
+            self.logger.info(f"データ更新完了: 合計={total}, 成功={success}, エラー={error}")
+
+            # 銘柄リストを再読み込み
+            self.load_initial_data()
+
+            # 完了メッセージ
+            QMessageBox.information(
+                self,
+                "データ更新完了",
+                f"優待銘柄データの更新が完了しました。\n\n"
+                f"取得件数: {total}件\n"
+                f"成功: {success}件\n"
+                f"エラー: {error}件"
+            )
+
+            self.status_bar.showMessage(f"データ更新完了: {success}件の銘柄を取得", 5000)
+
+        except Exception as e:
+            self.logger.error(f"データ更新完了処理エラー: {e}", exc_info=True)
+
+    def on_data_refresh_error(self, error_message: str):
+        """データ更新エラー時の処理"""
+        try:
+            # プログレスダイアログを閉じる
+            if hasattr(self, 'refresh_progress') and self.refresh_progress:
+                self.refresh_progress.close()
+
+            self.logger.error(f"データ更新エラー: {error_message}")
+
+            QMessageBox.critical(
+                self,
+                "データ更新エラー",
+                f"データの更新中にエラーが発生しました:\n\n{error_message}\n\n"
+                f"インターネット接続を確認して、再度お試しください。"
+            )
+
+            self.status_bar.showMessage("データ更新に失敗しました", 5000)
+
+        except Exception as e:
+            self.logger.error(f"データ更新エラー処理エラー: {e}", exc_info=True)
 
     def on_settings(self):
         """設定ボタンクリック時の処理"""
